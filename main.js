@@ -35,8 +35,7 @@ let smoothRiggedFace = null;
 // true = キーによるモーション再生中
 let isPlayingMotion = false;
 
-// 0 = モーション優先
-// 1 = トラッキング完全復帰
+// 0 = モーション優先 / 1 = トラッキング完全復帰
 let motionBlendFactor = 1;
 
 
@@ -47,16 +46,22 @@ let motionBlendFactor = 1;
 (async function main() {
 
     // --------------------------------------------------------
-    // 1. PixiJS
+    // 1. PixiJS (背景完全透過設定)
     // --------------------------------------------------------
 
     const app = new PIXI.Application({
         view: canvasElement,
         autoStart: true,
-        backgroundAlpha: 0,
+        backgroundAlpha: 0,      // アルファ値を0にして完全に透明化
+        transparent: true,          // 互換性用の透明設定
+        clearBeforeRender: true,    // 描画ごとにクリア
         resizeTo: window
     });
 
+    // PixiJS レンダラーの背景クリアフラグを確実にONにする
+    if (app.renderer.background) {
+        app.renderer.background.clearBeforeRender = true;
+    }
 
     // --------------------------------------------------------
     // 2. Live2Dモデル読み込み
@@ -68,21 +73,16 @@ let motionBlendFactor = 1;
 
 
     // --------------------------------------------------------
-    // ★重要
-    // モデル読み込み時に自動再生される待機モーションを停止
+    // ★自動再生される待機モーションを停止
     // --------------------------------------------------------
 
-    const motionManager =
-        currentModel.internalModel.motionManager;
+    const motionManager = currentModel.internalModel.motionManager;
 
     if (motionManager) {
         try {
             motionManager.stopAllMotions();
         } catch (error) {
-            console.warn(
-                "初期モーション停止時にエラー:",
-                error
-            );
+            console.warn("初期モーション停止時にエラー:", error);
         }
     }
 
@@ -92,9 +92,7 @@ let motionBlendFactor = 1;
     // --------------------------------------------------------
 
     currentModel.scale.set(0.4);
-
     currentModel.interactive = true;
-
     currentModel.anchor.set(0.5, 0.5);
 
     currentModel.position.set(
@@ -104,35 +102,25 @@ let motionBlendFactor = 1;
 
 
     // --------------------------------------------------------
-    // ドラッグ
+    // ドラッグ移動
     // --------------------------------------------------------
 
     currentModel.on("pointerdown", e => {
-
-        currentModel.offsetX =
-            e.data.global.x - currentModel.position.x;
-
-        currentModel.offsetY =
-            e.data.global.y - currentModel.position.y;
-
+        currentModel.offsetX = e.data.global.x - currentModel.position.x;
+        currentModel.offsetY = e.data.global.y - currentModel.position.y;
         currentModel.dragging = true;
     });
-
 
     currentModel.on("pointerup", () => {
         currentModel.dragging = false;
     });
 
-
     currentModel.on("pointerupoutside", () => {
         currentModel.dragging = false;
     });
 
-
     currentModel.on("pointermove", e => {
-
         if (!currentModel.dragging) return;
-
         currentModel.position.set(
             e.data.global.x - currentModel.offsetX,
             e.data.global.y - currentModel.offsetY
@@ -145,17 +133,13 @@ let motionBlendFactor = 1;
     // --------------------------------------------------------
 
     canvasElement.addEventListener("wheel", e => {
-
         e.preventDefault();
-
         const newScale = clamp(
             currentModel.scale.x + e.deltaY * -0.001,
             0.1,
             3.0
         );
-
         currentModel.scale.set(newScale);
-
     }, { passive: false });
 
 
@@ -171,15 +155,10 @@ let motionBlendFactor = 1;
     // --------------------------------------------------------
 
     if (motionManager) {
-
         motionManager.on("motionFinish", () => {
-
             console.log("モーション終了");
-
             isPlayingMotion = false;
-
-            // トラッキング復帰開始
-            motionBlendFactor = 0;
+            motionBlendFactor = 0; // トラッキング復帰開始
         });
     }
 
@@ -189,63 +168,21 @@ let motionBlendFactor = 1;
     // --------------------------------------------------------
 
     window.addEventListener("keydown", e => {
-
         if (e.repeat) return;
         if (!currentModel) return;
 
         switch (e.key) {
-
-            case "1":
-                // hiyori_m01
-                playCustomMotion("", 0);
-                break;
-
-            case "2":
-                // hiyori_m02
-                playCustomMotion("", 1);
-                break;
-
-            case "3":
-                // hiyori_m03
-                playCustomMotion("", 2);
-                break;
-
-            case "4":
-                // hiyori_m04
-                playCustomMotion("", 3);
-                break;
-
-            case "5":
-                // hiyori_m05
-                playCustomMotion("", 4);
-                break;
-
-            case "6":
-                // hiyori_m06
-                playCustomMotion("", 5);
-                break;
-
-            case "7":
-                // hiyori_m07
-                playCustomMotion("", 6);
-                break;
-
-            case "8":
-                // hiyori_m08
-                playCustomMotion("", 7);
-                break;
-
-            case "9":
-                // hiyori_m09
-                playCustomMotion("", 8);
-                break;
-
-            case "0":
-                // hiyori_m10
-                playCustomMotion("", 9);
-                break;
+            case "1": playCustomMotion("", 0); break;
+            case "2": playCustomMotion("", 1); break;
+            case "3": playCustomMotion("", 2); break;
+            case "4": playCustomMotion("", 3); break;
+            case "5": playCustomMotion("", 4); break;
+            case "6": playCustomMotion("", 5); break;
+            case "7": playCustomMotion("", 6); break;
+            case "8": playCustomMotion("", 7); break;
+            case "9": playCustomMotion("", 8); break;
+            case "0": playCustomMotion("", 9); break;
         }
-
     });
 
 
@@ -254,94 +191,46 @@ let motionBlendFactor = 1;
     // ========================================================
 
     app.ticker.add(delta => {
-
         if (!currentModel) return;
 
-
-        // ----------------------------------------------------
-        // モーション状態確認
-        // ----------------------------------------------------
-
-        const motionManager =
-            currentModel.internalModel.motionManager;
-
-
+        const motionManager = currentModel.internalModel.motionManager;
         let isExecutingMotion = false;
 
-
         if (isPlayingMotion) {
-
-            // motionManager.isFinished() が存在する場合
-            if (
-                motionManager &&
-                typeof motionManager.isFinished === "function"
-            ) {
-
-                isExecutingMotion =
-                    !motionManager.isFinished();
-
+            if (motionManager && typeof motionManager.isFinished === "function") {
+                isExecutingMotion = !motionManager.isFinished();
             } else {
-
-                // フォールバック
                 isExecutingMotion = true;
             }
         }
 
-
-        // ----------------------------------------------------
         // モーション再生中
-        // ----------------------------------------------------
-
         if (isPlayingMotion && isExecutingMotion) {
-
-            // Face trackingによるパラメータ上書きを停止
-
             return;
         }
 
-
-        // ----------------------------------------------------
         // モーション終了検知
-        // ----------------------------------------------------
-
         if (isPlayingMotion && !isExecutingMotion) {
-
             isPlayingMotion = false;
-
-            // トラッキング復帰開始
             motionBlendFactor = 0;
         }
 
-
-        // ----------------------------------------------------
         // トラッキング復帰フェード
-        // ----------------------------------------------------
-
         if (motionBlendFactor < 1) {
-
             motionBlendFactor = Math.min(
                 1,
                 motionBlendFactor + 0.05 * delta
             );
         }
 
-
-        // ----------------------------------------------------
-        // Face tracking
-        // ----------------------------------------------------
-
+        // Face trackingの適用
         if (latestRiggedFace) {
+            smoothRiggedFace = smoothFaceData(
+                smoothRiggedFace,
+                latestRiggedFace,
+                0.25 * delta
+            );
 
-            // EMAフィルタ
-            smoothRiggedFace =
-                smoothFaceData(
-                    smoothRiggedFace,
-                    latestRiggedFace,
-                    0.25 * delta
-                );
-
-
-            // Live2Dへ反映
             applyRig(
                 currentModel,
                 smoothRiggedFace,
@@ -349,7 +238,6 @@ let motionBlendFactor = 1;
                 motionBlendFactor
             );
         }
-
     });
 
 
@@ -358,25 +246,15 @@ let motionBlendFactor = 1;
     // ========================================================
 
     facemesh = new FaceMesh({
-
-        locateFile: file =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-
+        locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
     });
-
 
     facemesh.setOptions({
-
         maxNumFaces: 1,
-
         refineLandmarks: true,
-
         minDetectionConfidence: 0.5,
-
         minTrackingConfidence: 0.5
-
     });
-
 
     facemesh.onResults(onResults);
 
@@ -395,85 +273,34 @@ let motionBlendFactor = 1;
 // ============================================================
 
 const playCustomMotion = async (group, index = 0) => {
-
     if (!currentModel) return;
 
-
-    const motionManager =
-        currentModel.internalModel.motionManager;
-
+    const motionManager = currentModel.internalModel.motionManager;
     if (!motionManager) return;
 
-
-    console.log(
-        `モーション再生: index=${index}`
-    );
-
-
-    // --------------------------------------------------------
-    // 現在のモーションを停止
-    // --------------------------------------------------------
+    console.log(`モーション再生: index=${index}`);
 
     try {
         motionManager.stopAllMotions();
     } catch (error) {
-        console.warn(
-            "既存モーション停止エラー:",
-            error
-        );
+        console.warn("既存モーション停止エラー:", error);
     }
-
-
-    // --------------------------------------------------------
-    // モーション中はFace trackingを遮断
-    // --------------------------------------------------------
 
     isPlayingMotion = true;
-
     motionBlendFactor = 0;
 
-
-    // --------------------------------------------------------
-    // モーション再生
-    //
-    // priority = 3 (FORCE)
-    // autoDelete = false
-    // --------------------------------------------------------
-
     try {
-
-        const success =
-            await motionManager.startMotion(
-                group,
-                index,
-                3,
-                false
-            );
-
-
+        const success = await motionManager.startMotion(group, index, 3, false);
         if (!success) {
-
-            console.warn(
-                `モーション再生失敗: index=${index}`
-            );
-
+            console.warn(`モーション再生失敗: index=${index}`);
             isPlayingMotion = false;
-
             motionBlendFactor = 1;
         }
-
     } catch (error) {
-
-        console.error(
-            "モーション再生エラー:",
-            error
-        );
-
+        console.error("モーション再生エラー:", error);
         isPlayingMotion = false;
-
         motionBlendFactor = 1;
     }
-
 };
 
 
@@ -482,142 +309,50 @@ const playCustomMotion = async (group, index = 0) => {
 // ============================================================
 
 const onResults = results => {
-
-    const points =
-        results.multiFaceLandmarks
-            ? results.multiFaceLandmarks[0]
-            : null;
-
+    const points = results.multiFaceLandmarks ? results.multiFaceLandmarks[0] : null;
 
     if (points) {
-
-        latestRiggedFace =
-            Face.solve(points, {
-
-                runtime: "mediapipe",
-
-                video: videoElement
-
-            });
-
+        latestRiggedFace = Face.solve(points, {
+            runtime: "mediapipe",
+            video: videoElement
+        });
     } else {
-
         latestRiggedFace = null;
     }
-
 };
 
 
 // ============================================================
-// Faceデータ平滑化
-// EMAフィルター
+// Faceデータ平滑化 (EMAフィルター)
 // ============================================================
 
-const smoothFaceData = (
-    oldData,
-    newData,
-    factor
-) => {
+const smoothFaceData = (oldData, newData, factor) => {
+    if (!oldData) return newData;
 
-    if (!oldData) {
-        return newData;
-    }
-
-
-    const f = clamp(
-        factor,
-        0.05,
-        1
-    );
-
+    const f = clamp(factor, 0.05, 1);
 
     return {
-
         pupil: {
-
-            x: lerp(
-                oldData.pupil.x,
-                newData.pupil.x,
-                f
-            ),
-
-            y: lerp(
-                oldData.pupil.y,
-                newData.pupil.y,
-                f
-            )
+            x: lerp(oldData.pupil.x, newData.pupil.x, f),
+            y: lerp(oldData.pupil.y, newData.pupil.y, f)
         },
-
-
         head: {
-
             degrees: {
-
-                x: lerp(
-                    oldData.head.degrees.x,
-                    newData.head.degrees.x,
-                    f
-                ),
-
-                y: lerp(
-                    oldData.head.degrees.y,
-                    newData.head.degrees.y,
-                    f
-                ),
-
-                z: lerp(
-                    oldData.head.degrees.z,
-                    newData.head.degrees.z,
-                    f
-                )
-
+                x: lerp(oldData.head.degrees.x, newData.head.degrees.x, f),
+                y: lerp(oldData.head.degrees.y, newData.head.degrees.y, f),
+                z: lerp(oldData.head.degrees.z, newData.head.degrees.z, f)
             },
-
-
-            y: lerp(
-                oldData.head.y,
-                newData.head.y,
-                f
-            )
-
+            y: lerp(oldData.head.y, newData.head.y, f)
         },
-
-
         eye: {
-
-            l: lerp(
-                oldData.eye.l,
-                newData.eye.l,
-                f
-            ),
-
-            r: lerp(
-                oldData.eye.r,
-                newData.eye.r,
-                f
-            )
-
+            l: lerp(oldData.eye.l, newData.eye.l, f),
+            r: lerp(oldData.eye.r, newData.eye.r, f)
         },
-
-
         mouth: {
-
-            x: lerp(
-                oldData.mouth.x,
-                newData.mouth.x,
-                f
-            ),
-
-            y: lerp(
-                oldData.mouth.y,
-                newData.mouth.y,
-                f
-            )
-
+            x: lerp(oldData.mouth.x, newData.mouth.x, f),
+            y: lerp(oldData.mouth.y, newData.mouth.y, f)
         }
-
     };
-
 };
 
 
@@ -625,181 +360,54 @@ const smoothFaceData = (
 // Live2DへFace trackingを反映
 // ============================================================
 
-const applyRig = (
-    model,
-    result,
-    lerpAmount,
-    blendFactor = 1
-) => {
+const applyRig = (model, result, lerpAmount, blendFactor = 1) => {
+    const coreModel = model.internalModel.coreModel;
 
-    const coreModel =
-        model.internalModel.coreModel;
-
-
-    // --------------------------------------------------------
     // 自動まばたきをOFF
-    // --------------------------------------------------------
-
     model.internalModel.eyeBlink = undefined;
 
-
-    // --------------------------------------------------------
-    // パラメータ設定関数
-    // --------------------------------------------------------
-
-    const setParam = (
-        id,
-        targetVal
-    ) => {
-
-        const currentVal =
-            coreModel.getParameterValueById(id);
-
-
-        // モーション終了直後は
-        // 徐々にトラッキング値へ戻す
-
-        const finalTarget =
-            lerp(
-                currentVal,
-                targetVal,
-                blendFactor
-            );
-
-
+    const setParam = (id, targetVal) => {
+        const currentVal = coreModel.getParameterValueById(id);
+        const finalTarget = lerp(currentVal, targetVal, blendFactor);
         coreModel.setParameterValueById(
             id,
-            lerp(
-                currentVal,
-                finalTarget,
-                lerpAmount
-            )
+            lerp(currentVal, finalTarget, lerpAmount)
         );
-
     };
 
-
-    // ========================================================
     // 視線
-    // ========================================================
+    setParam("ParamEyeBallX", result.pupil.x);
+    setParam("ParamEyeBallY", result.pupil.y);
 
-    setParam(
-        "ParamEyeBallX",
-        result.pupil.x
-    );
-
-    setParam(
-        "ParamEyeBallY",
-        result.pupil.y
-    );
-
-
-    // ========================================================
     // 頭部回転
-    // ========================================================
+    setParam("ParamAngleX", -result.head.degrees.y);
+    setParam("ParamAngleY", result.head.degrees.x);
+    setParam("ParamAngleZ", -result.head.degrees.z);
 
-    setParam(
-        "ParamAngleX",
-        -result.head.degrees.y
-    );
-
-    setParam(
-        "ParamAngleY",
-        result.head.degrees.x
-    );
-
-    setParam(
-        "ParamAngleZ",
-        -result.head.degrees.z
-    );
-
-
-    // ========================================================
     // 体の連動
-    // ========================================================
-
     const dampener = 0.3;
+    setParam("ParamBodyAngleX", -result.head.degrees.y * dampener);
+    setParam("ParamBodyAngleY", result.head.degrees.x * dampener);
+    setParam("ParamBodyAngleZ", -result.head.degrees.z * dampener);
 
-
-    setParam(
-        "ParamBodyAngleX",
-        -result.head.degrees.y * dampener
-    );
-
-    setParam(
-        "ParamBodyAngleY",
-        result.head.degrees.x * dampener
-    );
-
-    setParam(
-        "ParamBodyAngleZ",
-        -result.head.degrees.z * dampener
-    );
-
-
-    // ========================================================
     // 目
-    // ========================================================
+    const currentEyeL = coreModel.getParameterValueById("ParamEyeLOpen");
+    const currentEyeR = coreModel.getParameterValueById("ParamEyeROpen");
 
-    const currentEyeL =
-        coreModel.getParameterValueById(
-            "ParamEyeLOpen"
-        );
-
-
-    const currentEyeR =
-        coreModel.getParameterValueById(
-            "ParamEyeROpen"
-        );
-
-
-    const stabilizedEyes =
-        Face.stabilizeBlink(
-
-            {
-                l: lerp(
-                    currentEyeL,
-                    result.eye.l,
-                    lerpAmount
-                ),
-
-                r: lerp(
-                    currentEyeR,
-                    result.eye.r,
-                    lerpAmount
-                )
-            },
-
-            result.head.y
-        );
-
-
-    setParam(
-        "ParamEyeLOpen",
-        stabilizedEyes.l
+    const stabilizedEyes = Face.stabilizeBlink(
+        {
+            l: lerp(currentEyeL, result.eye.l, lerpAmount),
+            r: lerp(currentEyeR, result.eye.r, lerpAmount)
+        },
+        result.head.y
     );
 
-    setParam(
-        "ParamEyeROpen",
-        stabilizedEyes.r
-    );
+    setParam("ParamEyeLOpen", stabilizedEyes.l);
+    setParam("ParamEyeROpen", stabilizedEyes.r);
 
-
-    // ========================================================
     // 口
-    // ========================================================
-
-    setParam(
-        "ParamMouthOpenY",
-        result.mouth.y
-    );
-
-
-    setParam(
-        "ParamMouthForm",
-        0.3 + result.mouth.x
-    );
-
+    setParam("ParamMouthOpenY", result.mouth.y);
+    setParam("ParamMouthForm", 0.3 + result.mouth.x);
 };
 
 
@@ -808,29 +416,14 @@ const applyRig = (
 // ============================================================
 
 const startCamera = () => {
-
-    const camera = new Camera(
-        videoElement,
-        {
-
-            onFrame: async () => {
-
-                if (!facemesh) return;
-
-                await facemesh.send({
-                    image: videoElement
-                });
-
-            },
-
-            width: 640,
-
-            height: 480
-
-        }
-    );
-
+    const camera = new Camera(videoElement, {
+        onFrame: async () => {
+            if (!facemesh) return;
+            await facemesh.send({ image: videoElement });
+        },
+        width: 640,
+        height: 480
+    });
 
     camera.start();
-
 };
