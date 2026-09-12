@@ -13,8 +13,8 @@ let smoothRiggedFace = null;
 
 // モーション再生管理
 let isPlayingMotion = false;
-let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完全復帰
-let motionTimer = null;    // タイマー管理用
+let motionBlendFactor = 0;
+let motionTimer = null;
 
 (async function main() {
 	// 1. PixiJSの準備（背景透過）
@@ -25,12 +25,18 @@ let motionTimer = null;    // タイマー管理用
 		resizeTo: window
 	});
 
-	// 2. Live2Dモデルのロード
-	currentModel = await Live2DModel.from(modelUrl, { autoInteract: false });
+	// 2. Live2Dモデルのロード（自動動作を完全にオフ）
+	currentModel = await Live2DModel.from(modelUrl, { 
+		autoInteract: false,
+		autoUpdate: false // 自動モーション再生（Idleループ等）を完全に無効化
+	});
 	currentModel.scale.set(0.4);
 	currentModel.interactive = true;
 	currentModel.anchor.set(0.5, 0.5);
 	currentModel.position.set(window.innerWidth * 0.5, window.innerHeight * 0.8);
+
+	// 初期状態で勝手に動いているモーションをすべて強制停止
+	currentModel.internalModel.motionManager.stopAllMotions();
 
 	// ドラッグ・操作設定
 	currentModel.on("pointerdown", e => {
@@ -58,7 +64,7 @@ let motionTimer = null;    // タイマー管理用
 
 	app.stage.addChild(currentModel);
 
-	// 3. 数字キー0〜9でキー押下（1回再生）
+	// 3. 数字キー0〜9でキー押下（1回だけモーション再生）
 	window.addEventListener("keydown", e => {
 		if (e.repeat || !currentModel) return;
 
@@ -74,22 +80,32 @@ let motionTimer = null;    // タイマー管理用
 		if (e.key === "0") playCustomMotion("", 9); // hiyori_m10
 	});
 
-	// 4. 毎フレームの描画・制御ルーティン
+	// 4. 毎フレームの更新ルーティン
 	app.ticker.add((delta) => {
 		if (!currentModel) return;
 
-		// モーション再生中はトラッキング処理を一切行わない
-		if (isPlayingMotion) return;
+		// autoUpdate: false にしているため、手動で時間経過を適用
+		const deltaTime = app.ticker.elapsedMS;
 
-		// モーション終了後、スムーズにトラッキングへ復帰（ブレンド処理）
+		if (isPlayingMotion) {
+			// モーション再生中のみモーションアニメーションを1フレーム進める
+			currentModel.update(deltaTime);
+			return;
+		}
+
+		// モーション終了後、スムーズにトラッキングへ復帰
 		if (motionBlendFactor < 1) {
 			motionBlendFactor = Math.min(1, motionBlendFactor + 0.05 * delta);
 		}
 
+		// トラッキング（Kalidokit）適用
 		if (latestRiggedFace) {
 			smoothRiggedFace = smoothFaceData(smoothRiggedFace, latestRiggedFace, 0.25 * delta);
 			applyRig(currentModel, smoothRiggedFace, 0.2 * delta, motionBlendFactor);
 		}
+
+		// モデル全体の最終パラメータ適用更新
+		currentModel.update(deltaTime);
 	});
 
 	// 5. MediaPipe FaceMesh
@@ -108,24 +124,25 @@ let motionTimer = null;    // タイマー管理用
 	startCamera();
 })();
 
-// 特定のキーで1回だけモーションを再生し、確実に終了させる関数
+// 特定のキーで1回だけモーションを再生する関数
 const playCustomMotion = async (group, index = 0) => {
 	if (!currentModel) return;
 
-	// 既存のタイマーがあればクリア
 	if (motionTimer) clearTimeout(motionTimer);
 
-	isPlayingMotion = true;
-	motionBlendFactor = 0; // トラッキング一時停止
+	// 既存モーションを停止して初期化
+	currentModel.internalModel.motionManager.stopAllMotions();
 
-	// モーション再生を開始
+	isPlayingMotion = true;
+	motionBlendFactor = 0;
+
+	// モーション開始
 	const motionValue = await currentModel.motion(group, index, 3);
 
 	if (motionValue) {
-		// モーションの長さをミリ秒単位で取得（取得できない場合はデフォルト3秒）
 		const duration = motionValue._duration || motionValue.duration || 3000;
 
-		// 時間が経過したらモーションマネージャーを停止し、トラッキングに強制復帰
+		// モーションの長さ（ミリ秒）が過ぎたら確実に停止してトラッキングに戻す
 		motionTimer = setTimeout(() => {
 			currentModel.internalModel.motionManager.stopAllMotions();
 			isPlayingMotion = false;
@@ -180,7 +197,7 @@ const smoothFaceData = (oldData, newData, factor) => {
 // Live2Dモデルへのパラメータ反映
 const applyRig = (model, result, lerpAmount, blendFactor = 1) => {
 	const coreModel = model.internalModel.coreModel;
-	model.internalModel.eyeBlink = undefined; // 自動まばたきオフ
+	model.internalModel.eyeBlink = undefined;
 
 	const setParam = (id, targetVal) => {
 		const currentVal = coreModel.getParameterValueById(id);
