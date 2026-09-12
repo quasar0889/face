@@ -15,6 +15,7 @@ let smoothRiggedFace = null;
 let isPlayingMotion = false;
 let motionBlendFactor = 0;
 let motionTimer = null;
+let originalMotionUpdate = null; // 本来のMotionUpdate処理を保持する変数
 
 (async function main() {
 	// 1. PixiJSの準備（背景透過）
@@ -27,21 +28,19 @@ let motionTimer = null;
 
 	// 2. Live2Dモデルのロード
 	currentModel = await Live2DModel.from(modelUrl, { 
-		autoInteract: false,
-		autoUpdate: false
+		autoInteract: false
 	});
 
-	// 【重要】自動待機（Idle）モーションのグループ定義を無効化
-	currentModel.internalModel.motionManager.idleMotionGroup = null;
-	// 既に再生キューに入っている初期モーションを全て強制停止
-	currentModel.internalModel.motionManager.stopAllMotions();
+	// 【絶対停止処理】ライブラリの自動モーション更新関数を退避・無効化する
+	originalMotionUpdate = currentModel.internalModel.motionManager.update;
+	currentModel.internalModel.motionManager.update = () => false; // 普段は何も実行させない
 
 	currentModel.scale.set(0.4);
 	currentModel.interactive = true;
 	currentModel.anchor.set(0.5, 0.5);
 	currentModel.position.set(window.innerWidth * 0.5, window.innerHeight * 0.8);
 
-	// ドラッグ・操作設定
+	// ドラッグ操作
 	currentModel.on("pointerdown", e => {
 		currentModel.offsetX = e.data.global.x - currentModel.position.x;
 		currentModel.offsetY = e.data.global.y - currentModel.position.y;
@@ -67,7 +66,7 @@ let motionTimer = null;
 
 	app.stage.addChild(currentModel);
 
-	// 3. 数字キー0〜9でキー押下（1回だけモーション再生）
+	// 3. キー押下（数字キー0〜9）
 	window.addEventListener("keydown", e => {
 		if (e.repeat || !currentModel) return;
 
@@ -83,15 +82,14 @@ let motionTimer = null;
 		if (e.key === "0") playCustomMotion("", 9); // hiyori_m10
 	});
 
-	// 4. 毎フレームの更新ルーティン
+	// 4. 毎フレームの描画・制御ルーティン
 	app.ticker.add((delta) => {
 		if (!currentModel) return;
 
-		const deltaTime = app.ticker.elapsedMS;
-
 		if (isPlayingMotion) {
-			// キーを押したモーションの再生中のみアニメーション時間を進める
-			currentModel.update(deltaTime);
+			// キーを押してモーション再生中のみ、一時的に本来のモーション更新を実行する
+			const coreModel = currentModel.internalModel.coreModel;
+			originalMotionUpdate.call(currentModel.internalModel.motionManager, coreModel, app.ticker.elapsedMS / 1000);
 			return;
 		}
 
@@ -100,14 +98,11 @@ let motionTimer = null;
 			motionBlendFactor = Math.min(1, motionBlendFactor + 0.05 * delta);
 		}
 
-		// トラッキング（Kalidokit）の適用
+		// カメラトラッキング適用（上書きされない）
 		if (latestRiggedFace) {
 			smoothRiggedFace = smoothFaceData(smoothRiggedFace, latestRiggedFace, 0.25 * delta);
 			applyRig(currentModel, smoothRiggedFace, 0.2 * delta, motionBlendFactor);
 		}
-
-		// パラメータ適用後の描画更新
-		currentModel.update(deltaTime);
 	});
 
 	// 5. MediaPipe FaceMesh
@@ -132,32 +127,28 @@ const playCustomMotion = async (group, index = 0) => {
 
 	if (motionTimer) clearTimeout(motionTimer);
 
-	// 再生前に状態をクリーンにする
-	currentModel.internalModel.motionManager.stopAllMotions();
-
 	isPlayingMotion = true;
 	motionBlendFactor = 0;
 
-	// モーション開始
+	// 再生前にモーションをセットアップ
 	const motionValue = await currentModel.motion(group, index, 3);
 
 	if (motionValue) {
 		const duration = motionValue._duration || motionValue.duration || 3000;
 
-		// 再生時間が過ぎたら強制停止してカメラトラッキングに戻す
+		// アニメーション時間が終わったら強制的にトラッキングへ戻す
 		motionTimer = setTimeout(() => {
-			currentModel.internalModel.motionManager.stopAllMotions();
 			isPlayingMotion = false;
+			currentModel.internalModel.motionManager.stopAllMotions();
 		}, duration);
 	} else {
 		isPlayingMotion = false;
 	}
 };
 
-// カメラのトラッキング結果受信
+// カメラトラッキング結果受信
 const onResults = results => {
 	const points = results.multiFaceLandmarks ? results.multiFaceLandmarks[0] : null;
-	
 	if (points) {
 		latestRiggedFace = Face.solve(points, {
 			runtime: "mediapipe",
@@ -168,7 +159,7 @@ const onResults = results => {
 	}
 };
 
-// 動きを滑らかにするデータ平滑化処理（EMAフィルタ）
+// データの平滑化（EMAフィルタ）
 const smoothFaceData = (oldData, newData, factor) => {
 	if (!oldData) return newData;
 	const f = clamp(factor, 0.05, 1);
@@ -196,7 +187,7 @@ const smoothFaceData = (oldData, newData, factor) => {
 	};
 };
 
-// Live2Dモデルへのパラメータ反映
+// パラメータ適用処理
 const applyRig = (model, result, lerpAmount, blendFactor = 1) => {
 	const coreModel = model.internalModel.coreModel;
 	model.internalModel.eyeBlink = undefined;
@@ -211,7 +202,7 @@ const applyRig = (model, result, lerpAmount, blendFactor = 1) => {
 	setParam("ParamEyeBallX", result.pupil.x);
 	setParam("ParamEyeBallY", result.pupil.y);
 
-	// 頭部の回転（ミラーリング）
+	// 頭部回転（ミラーリング）
 	setParam("ParamAngleX", -result.head.degrees.y);
 	setParam("ParamAngleY", result.head.degrees.x);
 	setParam("ParamAngleZ", -result.head.degrees.z);
