@@ -11,7 +11,9 @@ let currentModel, facemesh;
 let latestRiggedFace = null;
 let smoothRiggedFace = null; // ぬるぬる化用の保持データ
 
-let motionBlendFactor = 1; // 0: モーション優先, 1: トラッキング完全復帰
+// モーション再生管理フラグ
+let isPlayingMotion = false;
+let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完全復帰
 
 (async function main() {
 	// 1. PixiJSの準備（背景透過）
@@ -55,16 +57,21 @@ let motionBlendFactor = 1; // 0: モーション優先, 1: トラッキング完
 
 	app.stage.addChild(currentModel);
 
+	// モーション再生終了イベントの検知
+	currentModel.internalModel.motionManager.on("motionFinish", () => {
+		isPlayingMotion = false;
+	});
+
 	// 3. 数字キー0〜9でひよりちゃんのモーション（hiyori_m01〜m10）を再生
 	window.addEventListener("keydown", e => {
 		if (e.repeat || !currentModel) return;
 
-		// Hiyoriモデルのグループ名は空文字 "" または "Idle"
+		// Hiyoriモデルのグループ名は空文字 "" です
 		if (e.key === "1") playCustomMotion("", 0); // hiyori_m01
 		if (e.key === "2") playCustomMotion("", 1); // hiyori_m02
 		if (e.key === "3") playCustomMotion("", 2); // hiyori_m03
-		if (e.key === "4") playCustomMotion("", 4); // hiyori_m05
-		if (e.key === "5") playCustomMotion("", 4); // hiyori_m05
+		if (e.key === "4") playCustomMotion("", 3); // hiyori_m04
+		if (e.key === "5") playCustomMotion("", 5); // hiyori_m05
 		if (e.key === "6") playCustomMotion("", 5); // hiyori_m06
 		if (e.key === "7") playCustomMotion("", 6); // hiyori_m07
 		if (e.key === "8") playCustomMotion("", 7); // hiyori_m08
@@ -72,20 +79,23 @@ let motionBlendFactor = 1; // 0: モーション優先, 1: トラッキング完
 		if (e.key === "0") playCustomMotion("", 9); // hiyori_m10
 	});
 
-	// 4. 毎フレームの描画・制御ルーティン（ぬるぬる補間）
+	// 4. 毎フレームの描画・制御ルーティン（ぬるぬる補間・修正版）
 	app.ticker.add((delta) => {
 		if (!currentModel) return;
 
-		// モーション再生中かどうかをLive2D内部のmotionManagerから判定
-		const isPlaying = currentModel.internalModel.motionManager.isPlaying();
+		const motionManager = currentModel.internalModel.motionManager;
+		// モーション再生中かどうか判定（isFinishedがfalseなら再生中）
+		const isExecutingMotion = motionManager.isFinished ? !motionManager.isFinished() : isPlayingMotion;
 
-		if (isPlaying) {
-			// モーション再生中はカメラトラッキング上書きをスキップ
-			motionBlendFactor = 0;
+		if (isPlayingMotion && isExecutingMotion) {
+			// モーション再生中はトラッキング処理を実行しない（モーションを優先）
 			return;
+		} else if (isPlayingMotion && !isExecutingMotion) {
+			// モーション終了を検知してフラグを下ろす
+			isPlayingMotion = false;
 		}
 
-		// モーション終了後の滑らかなトラッキング復帰（フェードイン）
+		// モーション終了直後の滑らかなトラッキング復帰（フェードイン）
 		if (motionBlendFactor < 1) {
 			motionBlendFactor = Math.min(1, motionBlendFactor + 0.05 * delta);
 		}
@@ -113,17 +123,19 @@ let motionBlendFactor = 1; // 0: モーション優先, 1: トラッキング完
 	startCamera();
 })();
 
-// 特定のキーでモーションを再生する関数
+// 特定のキーでモーションを再生する関数（修正版）
 const playCustomMotion = async (group, index = 0) => {
 	if (!currentModel) return;
-	motionBlendFactor = 0; // トラッキングの干渉をオフにする
 
-	// 優先度 3 (FORCE) でモーション開始
-	try {
-		await currentModel.motion(group, index, 3);
-	} catch (e) {
-		// 空文字 "" で再生できなかった場合 "Idle" グループで試行
-		await currentModel.motion("Idle", index, 3);
+	const motionManager = currentModel.internalModel.motionManager;
+
+	isPlayingMotion = true;
+	motionBlendFactor = 0; // トラッキングによる上書きを遮断
+
+	// 優先度 FORCE (3) かつ loop を false に設定して単発再生を指示
+	const success = await motionManager.startMotion(group, index, 3, false);
+	if (!success) {
+		isPlayingMotion = false;
 	}
 };
 
