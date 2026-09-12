@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 	<head>
 		<meta charset="utf-8" />
 		<link rel="stylesheet" href="custom.css"/>
@@ -15,11 +15,36 @@
 		<script src="//cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 		<!-- Kalidokit -->
 		<script src="//cdn.jsdelivr.net/npm/kalidokit@1.1/dist/kalidokit.umd.js"></script>
+		
+		<style>
+			/* 背景透過用スタイル */
+			html, body {
+				margin: 0;
+				padding: 0;
+				width: 100%;
+				height: 100%;
+				overflow: hidden;
+				background-color: transparent !important;
+			}
+			/* プレビュー用要素（必要に応じて非表示） */
+			#preview {
+				display: none; 
+			}
+			/* Live2D描画用Canvasを全面・透過表示 */
+			#my-live2d {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100vw;
+				height: 100vh;
+				background: transparent !important;
+			}
+		</style>
 	</head>
 	<body>
 		<!-- Preview -->
 		<div id="preview">
-			<video id="my-video"></video>
+			<video id="my-video" playsinline></video>
 			<canvas id="my-guides"></canvas>
 		</div>
 		<!-- Live2D -->
