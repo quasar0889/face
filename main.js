@@ -11,9 +11,10 @@ let currentModel, facemesh;
 let latestRiggedFace = null;
 let smoothRiggedFace = null;
 
-// モーション再生管理フラグ
+// モーション再生管理
 let isPlayingMotion = false;
 let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完全復帰
+let motionTimer = null;    // タイマー管理用
 
 (async function main() {
 	// 1. PixiJSの準備（背景透過）
@@ -57,11 +58,6 @@ let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完
 
 	app.stage.addChild(currentModel);
 
-	// モーション再生終了イベントの検知（ループが切れて終了した時に発火）
-	currentModel.internalModel.motionManager.on("motionFinish", () => {
-		isPlayingMotion = false;
-	});
-
 	// 3. 数字キー0〜9でキー押下（1回再生）
 	window.addEventListener("keydown", e => {
 		if (e.repeat || !currentModel) return;
@@ -70,18 +66,19 @@ let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完
 		if (e.key === "2") playCustomMotion("", 1); // hiyori_m02
 		if (e.key === "3") playCustomMotion("", 2); // hiyori_m03
 		if (e.key === "4") playCustomMotion("", 3); // hiyori_m04
-		if (e.key === "5") playCustomMotion("", 5); // hiyori_m06
-		if (e.key === "6") playCustomMotion("", 6); // hiyori_m07
-		if (e.key === "7") playCustomMotion("", 7); // hiyori_m08
-		if (e.key === "8") playCustomMotion("", 8); // hiyori_m09
-		if (e.key === "9") playCustomMotion("", 9); // hiyori_m10
+		if (e.key === "5") playCustomMotion("", 4); // hiyori_m05
+		if (e.key === "6") playCustomMotion("", 5); // hiyori_m06
+		if (e.key === "7") playCustomMotion("", 6); // hiyori_m07
+		if (e.key === "8") playCustomMotion("", 7); // hiyori_m08
+		if (e.key === "9") playCustomMotion("", 8); // hiyori_m09
+		if (e.key === "0") playCustomMotion("", 9); // hiyori_m10
 	});
 
 	// 4. 毎フレームの描画・制御ルーティン
 	app.ticker.add((delta) => {
 		if (!currentModel) return;
 
-		// モーション再生中はカメラトラッキングによるパラメータ上書きを停止
+		// モーション再生中はトラッキング処理を一切行わない
 		if (isPlayingMotion) return;
 
 		// モーション終了後、スムーズにトラッキングへ復帰（ブレンド処理）
@@ -111,24 +108,29 @@ let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完
 	startCamera();
 })();
 
-// 特定のキーで1回だけモーションを再生する関数
+// 特定のキーで1回だけモーションを再生し、確実に終了させる関数
 const playCustomMotion = async (group, index = 0) => {
 	if (!currentModel) return;
-	
+
+	// 既存のタイマーがあればクリア
+	if (motionTimer) clearTimeout(motionTimer);
+
 	isPlayingMotion = true;
 	motionBlendFactor = 0; // トラッキング一時停止
 
-	// 1. モーションを優先度3(FORCE)でスタート
+	// モーション再生を開始
 	const motionValue = await currentModel.motion(group, index, 3);
 
-	// 2. ループ再生を強制解除（1回終わったら止める設定）
-	if (motionValue && currentModel.internalModel.motionManager.activeMotionQueue.length > 0) {
-		const currentActive = currentModel.internalModel.motionManager.activeMotionQueue[0];
-		if (currentActive && currentActive.motion) {
-			currentActive.motion.setIsLoopFadeIn(false);
-			currentActive.motion.setLoop(false); // ループOFF
-		}
-	} else if (!motionValue) {
+	if (motionValue) {
+		// モーションの長さをミリ秒単位で取得（取得できない場合はデフォルト3秒）
+		const duration = motionValue._duration || motionValue.duration || 3000;
+
+		// 時間が経過したらモーションマネージャーを停止し、トラッキングに強制復帰
+		motionTimer = setTimeout(() => {
+			currentModel.internalModel.motionManager.stopAllMotions();
+			isPlayingMotion = false;
+		}, duration);
+	} else {
 		isPlayingMotion = false;
 	}
 };
