@@ -9,7 +9,7 @@ const videoElement = document.getElementById("my-video");
 
 let currentModel, facemesh;
 let latestRiggedFace = null;
-let smoothRiggedFace = null; // スムージング用の保持データ
+let smoothRiggedFace = null; // ぬるぬる化用の保持データ
 
 // モーション再生管理フラグ
 let isPlayingMotion = false;
@@ -62,33 +62,39 @@ let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完
 		isPlayingMotion = false;
 	});
 
-	// 3. キー操作でモーション再生 (例: 1, 2, 3キー)
+	// 3. 数字キー0〜9でひよりちゃんのモーション（hiyori_m01〜m10）を再生
 	window.addEventListener("keydown", e => {
 		if (e.repeat || !currentModel) return;
 
-		// 数字キー1〜3でモーション切り替え（モデルに定義されているモーション群から指定）
-		if (e.key === "1") playCustomMotion("Idle", 0);
-		if (e.key === "2") playCustomMotion("TapBody", 0);
-		if (e.key === "3") playCustomMotion("TapBody", 1);
+		// Hiyoriモデルのグループ名は空文字 "" です
+		if (e.key === "1") playCustomMotion("", 0); // hiyori_m01
+		if (e.key === "2") playCustomMotion("", 1); // hiyori_m02
+		if (e.key === "3") playCustomMotion("", 2); // hiyori_m03
+		if (e.key === "4") playCustomMotion("", 3); // hiyori_m04
+		if (e.key === "5") playCustomMotion("", 4); // hiyori_m05
+		if (e.key === "6") playCustomMotion("", 5); // hiyori_m06
+		if (e.key === "7") playCustomMotion("", 6); // hiyori_m07
+		if (e.key === "8") playCustomMotion("", 7); // hiyori_m08
+		if (e.key === "9") playCustomMotion("", 8); // hiyori_m09
+		if (e.key === "0") playCustomMotion("", 9); // hiyori_m10
 	});
 
-	// 4. 毎フレームの更新処理（ぬるぬる動かすための補間ルーティン）
+	// 4. 毎フレームの描画・制御ルーティン（ぬるぬる補間）
 	app.ticker.add((delta) => {
 		if (!currentModel) return;
 
-		// モーション終了直後の滑らかな復帰（ブレンド処理）
-		if (!isPlayingMotion && motionBlendFactor < 1) {
+		// モーション再生中はトラッキング上書きをスキップしてモーションを優先表現
+		if (isPlayingMotion) return;
+
+		// モーション終了直後の滑らかなトラッキング復帰（フェードイン）
+		if (motionBlendFactor < 1) {
 			motionBlendFactor = Math.min(1, motionBlendFactor + 0.05 * delta);
 		}
 
 		if (latestRiggedFace) {
-			// 指数移動平均フィルタ（EMA）によるノイズ除去・平滑化
+			// 指数移動平均フィルタ（EMA）によるノイズ軽減
 			smoothRiggedFace = smoothFaceData(smoothRiggedFace, latestRiggedFace, 0.25 * delta);
-
-			// モーション再生中ではない、またはブレンド復帰中であればパラメータ適用
-			if (!isPlayingMotion || motionBlendFactor > 0) {
-				applyRig(currentModel, smoothRiggedFace, 0.2 * delta, motionBlendFactor);
-			}
+			applyRig(currentModel, smoothRiggedFace, 0.2 * delta, motionBlendFactor);
 		}
 	});
 
@@ -109,11 +115,16 @@ let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完
 })();
 
 // 特定のキーでモーションを再生する関数
-const playCustomMotion = (group, index = 0) => {
+const playCustomMotion = async (group, index = 0) => {
 	if (!currentModel) return;
 	isPlayingMotion = true;
-	motionBlendFactor = 0; // モーション開始時はトラッキングを一時停止
-	currentModel.motion(group, index, PIXI.live2d.MotionPriority.FORCE);
+	motionBlendFactor = 0; // トラッキングによる上書きを遮断
+
+	// 優先度 FORCE (3) で確実にモーションを呼び出す
+	const success = await currentModel.motion(group, index, 3);
+	if (!success) {
+		isPlayingMotion = false;
+	}
 };
 
 // カメラのトラッキング結果受信
@@ -130,7 +141,7 @@ const onResults = results => {
 	}
 };
 
-// ノイズを軽減してぬるぬるにするためのデータ平滑化（EMA）
+// 動きをぬるぬるにするデータ平滑化処理（EMAフィルタ）
 const smoothFaceData = (oldData, newData, factor) => {
 	if (!oldData) return newData;
 	const f = clamp(factor, 0.05, 1);
@@ -158,14 +169,13 @@ const smoothFaceData = (oldData, newData, factor) => {
 	};
 };
 
-// Live2Dモデルに追跡パラメータを反映する
+// Live2Dモデルへのパラメータ反映
 const applyRig = (model, result, lerpAmount, blendFactor = 1) => {
 	const coreModel = model.internalModel.coreModel;
-	model.internalModel.eyeBlink = undefined; // 自動まばたき無効化
+	model.internalModel.eyeBlink = undefined; // 自動まばたきオフ
 
 	const setParam = (id, targetVal) => {
 		const currentVal = coreModel.getParameterValueById(id);
-		// blendFactorを掛け合わせて、モーションからトラッキングへ徐々に切り替える
 		const finalTarget = lerp(currentVal, targetVal, blendFactor);
 		coreModel.setParameterValueById(id, lerp(currentVal, finalTarget, lerpAmount));
 	};
@@ -174,16 +184,16 @@ const applyRig = (model, result, lerpAmount, blendFactor = 1) => {
 	setParam("ParamEyeBallX", result.pupil.x);
 	setParam("ParamEyeBallY", result.pupil.y);
 
-	// 頭部の回転
-	setParam("ParamAngleX", result.head.degrees.y);
+	// 頭部の回転（Webカメラと向きを合わせるミラーリング）
+	setParam("ParamAngleX", -result.head.degrees.y);
 	setParam("ParamAngleY", result.head.degrees.x);
-	setParam("ParamAngleZ", result.head.degrees.z);
+	setParam("ParamAngleZ", -result.head.degrees.z);
 
 	// 体の連動
 	const dampener = 0.3;
-	setParam("ParamBodyAngleX", result.head.degrees.y * dampener);
+	setParam("ParamBodyAngleX", -result.head.degrees.y * dampener);
 	setParam("ParamBodyAngleY", result.head.degrees.x * dampener);
-	setParam("ParamBodyAngleZ", result.head.degrees.z * dampener);
+	setParam("ParamBodyAngleZ", -result.head.degrees.z * dampener);
 
 	// 目と口
 	const currentEyeL = coreModel.getParameterValueById("ParamEyeLOpen");
