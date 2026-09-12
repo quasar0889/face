@@ -17,29 +17,35 @@
 		<script src="//cdn.jsdelivr.net/npm/kalidokit@1.1/dist/kalidokit.umd.js"></script>
 		
 		<style>
-			/* 背景透過用スタイル */
-			html, body {
-				margin: 0;
-				padding: 0;
-				width: 100%;
-				height: 100%;
-				overflow: hidden;
-				background-color: transparent !important;
-			}
-			/* プレビュー用要素（必要に応じて非表示） */
-			#preview {
-				display: none; 
-			}
-			/* Live2D描画用Canvasを全面・透過表示 */
-			#my-live2d {
-				position: absolute;
-				top: 0;
-				left: 0;
-				width: 100vw;
-				height: 100vh;
-				background: transparent !important;
-			}
-		</style>
+    /* 画面全体の透過 */
+    html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent !important;
+    }
+
+    /* ページ内のすべての div や要素の背景・影を透明化 */
+    div, iframe, #preview {
+        background: transparent !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    /* Live2D表示用の Canvas を完全透過 */
+    #my-live2d {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: transparent !important;
+        background-color: transparent !important;
+    }
+</style>
 	</head>
 	<body>
 		<!-- Preview -->
