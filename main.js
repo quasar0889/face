@@ -25,18 +25,21 @@ let motionTimer = null;
 		resizeTo: window
 	});
 
-	// 2. Live2Dモデルのロード（自動動作を完全にオフ）
+	// 2. Live2Dモデルのロード
 	currentModel = await Live2DModel.from(modelUrl, { 
 		autoInteract: false,
-		autoUpdate: false // 自動モーション再生（Idleループ等）を完全に無効化
+		autoUpdate: false
 	});
+
+	// 【重要】自動待機（Idle）モーションのグループ定義を無効化
+	currentModel.internalModel.motionManager.idleMotionGroup = null;
+	// 既に再生キューに入っている初期モーションを全て強制停止
+	currentModel.internalModel.motionManager.stopAllMotions();
+
 	currentModel.scale.set(0.4);
 	currentModel.interactive = true;
 	currentModel.anchor.set(0.5, 0.5);
 	currentModel.position.set(window.innerWidth * 0.5, window.innerHeight * 0.8);
-
-	// 初期状態で勝手に動いているモーションをすべて強制停止
-	currentModel.internalModel.motionManager.stopAllMotions();
 
 	// ドラッグ・操作設定
 	currentModel.on("pointerdown", e => {
@@ -84,11 +87,10 @@ let motionTimer = null;
 	app.ticker.add((delta) => {
 		if (!currentModel) return;
 
-		// autoUpdate: false にしているため、手動で時間経過を適用
 		const deltaTime = app.ticker.elapsedMS;
 
 		if (isPlayingMotion) {
-			// モーション再生中のみモーションアニメーションを1フレーム進める
+			// キーを押したモーションの再生中のみアニメーション時間を進める
 			currentModel.update(deltaTime);
 			return;
 		}
@@ -98,13 +100,13 @@ let motionTimer = null;
 			motionBlendFactor = Math.min(1, motionBlendFactor + 0.05 * delta);
 		}
 
-		// トラッキング（Kalidokit）適用
+		// トラッキング（Kalidokit）の適用
 		if (latestRiggedFace) {
 			smoothRiggedFace = smoothFaceData(smoothRiggedFace, latestRiggedFace, 0.25 * delta);
 			applyRig(currentModel, smoothRiggedFace, 0.2 * delta, motionBlendFactor);
 		}
 
-		// モデル全体の最終パラメータ適用更新
+		// パラメータ適用後の描画更新
 		currentModel.update(deltaTime);
 	});
 
@@ -130,7 +132,7 @@ const playCustomMotion = async (group, index = 0) => {
 
 	if (motionTimer) clearTimeout(motionTimer);
 
-	// 既存モーションを停止して初期化
+	// 再生前に状態をクリーンにする
 	currentModel.internalModel.motionManager.stopAllMotions();
 
 	isPlayingMotion = true;
@@ -142,7 +144,7 @@ const playCustomMotion = async (group, index = 0) => {
 	if (motionValue) {
 		const duration = motionValue._duration || motionValue.duration || 3000;
 
-		// モーションの長さ（ミリ秒）が過ぎたら確実に停止してトラッキングに戻す
+		// 再生時間が過ぎたら強制停止してカメラトラッキングに戻す
 		motionTimer = setTimeout(() => {
 			currentModel.internalModel.motionManager.stopAllMotions();
 			isPlayingMotion = false;
