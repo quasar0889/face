@@ -57,7 +57,7 @@ let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完
 
 	app.stage.addChild(currentModel);
 
-	// モーション再生終了イベントの検知
+	// モーション完了イベント
 	currentModel.internalModel.motionManager.on("motionFinish", () => {
 		isPlayingMotion = false;
 	});
@@ -66,42 +66,41 @@ let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完
 	window.addEventListener("keydown", e => {
 		if (e.repeat || !currentModel) return;
 
-		// Hiyoriモデルのグループ名は空文字 "" です
-		if (e.key === "1") playCustomMotion("", 0); // hiyori_m01
-		if (e.key === "2") playCustomMotion("", 1); // hiyori_m02
-		if (e.key === "3") playCustomMotion("", 2); // hiyori_m03
-		if (e.key === "4") playCustomMotion("", 3); // hiyori_m04
-		if (e.key === "5") playCustomMotion("", 5); // hiyori_m05
-		if (e.key === "6") playCustomMotion("", 5); // hiyori_m06
-		if (e.key === "7") playCustomMotion("", 6); // hiyori_m07
-		if (e.key === "8") playCustomMotion("", 7); // hiyori_m08
-		if (e.key === "9") playCustomMotion("", 8); // hiyori_m09
-		if (e.key === "0") playCustomMotion("", 9); // hiyori_m10
+		if (e.key === "1") playCustomMotion("", 0);
+		if (e.key === "2") playCustomMotion("", 1);
+		if (e.key === "3") playCustomMotion("", 2);
+		if (e.key === "4") playCustomMotion("", 3);
+		if (e.key === "5") playCustomMotion("", 4);
+		if (e.key === "6") playCustomMotion("", 5);
+		if (e.key === "7") playCustomMotion("", 6);
+		if (e.key === "8") playCustomMotion("", 7);
+		if (e.key === "9") playCustomMotion("", 8);
+		if (e.key === "0") playCustomMotion("", 9);
 	});
 
-	// 4. 毎フレームの描画・制御ルーティン（ぬるぬる補間・修正版）
+	// 4. 毎フレームの描画・制御ルーティン
 	app.ticker.add((delta) => {
 		if (!currentModel) return;
 
 		const motionManager = currentModel.internalModel.motionManager;
-		// モーション再生中かどうか判定（isFinishedがfalseなら再生中）
-		const isExecutingMotion = motionManager.isFinished ? !motionManager.isFinished() : isPlayingMotion;
-
-		if (isPlayingMotion && isExecutingMotion) {
-			// モーション再生中はトラッキング処理を実行しない（モーションを優先）
-			return;
-		} else if (isPlayingMotion && !isExecutingMotion) {
-			// モーション終了を検知してフラグを下ろす
+		
+		// motionManager 側の内部状態も直接確認
+		const isFinished = motionManager.isFinished();
+		if (isPlayingMotion && isFinished) {
 			isPlayingMotion = false;
 		}
 
-		// モーション終了直後の滑らかなトラッキング復帰（フェードイン）
+		// モーション再生中は何もしない（パラメータの追記を行わずモーション描画に専念させる）
+		if (isPlayingMotion) {
+			return;
+		}
+
+		// モーション終了直後の滑らかなトラッキング復帰
 		if (motionBlendFactor < 1) {
 			motionBlendFactor = Math.min(1, motionBlendFactor + 0.05 * delta);
 		}
 
 		if (latestRiggedFace) {
-			// 指数移動平均フィルタ（EMA）によるノイズ軽減
 			smoothRiggedFace = smoothFaceData(smoothRiggedFace, latestRiggedFace, 0.25 * delta);
 			applyRig(currentModel, smoothRiggedFace, 0.2 * delta, motionBlendFactor);
 		}
@@ -123,17 +122,35 @@ let motionBlendFactor = 0; // 0: モーション優先, 1: トラッキング完
 	startCamera();
 })();
 
-// 特定のキーでモーションを再生する関数（修正版）
+// モーションの強制的単発再生関数
 const playCustomMotion = async (group, index = 0) => {
 	if (!currentModel) return;
 
 	const motionManager = currentModel.internalModel.motionManager;
 
-	isPlayingMotion = true;
-	motionBlendFactor = 0; // トラッキングによる上書きを遮断
+	// 既存の再生を一度リセットする
+	motionManager.stopAllMotions();
 
-	// 優先度 FORCE (3) かつ loop を false に設定して単発再生を指示
-	const success = await motionManager.startMotion(group, index, 3, false);
+	// 対象のモーションインスタンスを取得して直接ループフラグをオフにする
+	try {
+		const motion = await motionManager.loadMotion(group, index);
+		if (motion) {
+			// CubismMotion のループ属性を強制上書き
+			motion._isLoop = false;
+			motion._isLoopFadeIn = false;
+			if (motion._motionData) {
+				motion._motionData.isLoop = false;
+			}
+		}
+	} catch (err) {
+		console.warn("Motion load failed", err);
+	}
+
+	isPlayingMotion = true;
+	motionBlendFactor = 0; // トラッキング復帰用フェードを初期化
+
+	// 優先度 3 (FORCE) で実行
+	const success = await currentModel.motion(group, index, 3);
 	if (!success) {
 		isPlayingMotion = false;
 	}
@@ -196,7 +213,7 @@ const applyRig = (model, result, lerpAmount, blendFactor = 1) => {
 	setParam("ParamEyeBallX", result.pupil.x);
 	setParam("ParamEyeBallY", result.pupil.y);
 
-	// 頭部の回転（Webカメラと向きを合わせるミラーリング）
+	// 頭部の回転
 	setParam("ParamAngleX", -result.head.degrees.y);
 	setParam("ParamAngleY", result.head.degrees.x);
 	setParam("ParamAngleZ", -result.head.degrees.z);
