@@ -11,7 +11,6 @@ const {
 	Utils: { clamp }
 } = Kalidokit;
 
-// 1, Live2Dモデルへのパスを指定する
 const modelUrl = "./hiyori/hiyori_pro_t10.model3.json";
 const videoElement = document.getElementById("my-video");
 const guideCanvas = document.getElementById("my-guides");
@@ -65,6 +64,24 @@ let currentModel, facemesh;
 
 	// 6, Live2Dモデルを配置する
 	app.stage.addChild(currentModel);
+
+	// ★追加: キーボード操作でモーションを1回再生するイベントリスナー
+	window.addEventListener("keydown", e => {
+		if (!currentModel) return;
+
+		// Spaceキーが押された時にモーションを再生
+		if (e.code === "Space") {
+			// 例: "TapBody" グループの0番目のモーションを優先度3で再生
+			currentModel.motion("TapBody", 0, 3);
+		}
+		
+		// 他のキー（例: 'KeyA'）で別のモーションを呼び出す例
+		/*
+		if (e.code === "KeyA") {
+			currentModel.motion("Idle", 0, 3);
+		}
+		*/
+	});
 
 	// 7, フェイスメッシュの読み込みと設定をする
 	facemesh = new FaceMesh({
@@ -125,13 +142,12 @@ const animateLive2DModel = points => {
 	rigFace(riggedFace, 0.5);
 };
 
-// パラメータ書き換え処理（毎フレーム実行）
+// パラメータ書き換え処理
 const rigFace = (result, lerpAmount = 0.7) => {
 	if (!currentModel || !result) return;
 	
 	const coreModel = currentModel.internalModel.coreModel;
 
-	// 自動瞬き処理との衝突を防ぐ
 	currentModel.internalModel.eyeBlink = undefined;
 
 	// 瞳
@@ -185,7 +201,7 @@ const rigFace = (result, lerpAmount = 0.7) => {
 	coreModel.setParameterValueById("ParamEyeLOpen", stabilizedEyes.l);
 	coreModel.setParameterValueById("ParamEyeROpen", stabilizedEyes.r);
 
-	// 口の開閉・形状
+	// 口の開閉
 	coreModel.setParameterValueById(
 		"ParamMouthOpenY",
 		lerp(result.mouth.y, coreModel.getParameterValueById("ParamMouthOpenY"), 0.3)
