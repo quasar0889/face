@@ -1,34 +1,19 @@
-
-body {
+html, body {
 	margin: 0;
-}
-
-canvas {
-	display: block;
-}
-
-video {
-	max-width: 320px;
-	height: auto;
-	transform: scale(-1, 1);
-}
-
-#preview {
-	display: flex; flex-direction: column;
-	position: absolute;
-	top: 16px; left: 16px;
+	padding: 0;
+	width: 100%;
+	height: 100%;
 	overflow: hidden;
-	border-radius: 16px;
+	background: transparent; /* 背景透過 */
 }
 
-#preview canvas {
-	transform: scale(-1, 1);
+/* 自分の顔（映像）とガイドラインを完全非表示にする */
+#preview, #my-video, #my-guides {
+	display: none !important;
 }
 
-#my-guides {
-	display: none;
-	position: absolute;
-	top: 0; left: 0;
-	width: 100%; height: auto;
-	z-index: 1;
+#my-live2d {
+	width: 100vw;
+	height: 100vh;
+	display: block;
 }
