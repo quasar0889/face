@@ -1,53 +1,51 @@
 // PixiJS
-const { Application, live2d: { Live2DModel } } = PIXI;
+const {
+	Application,
+	live2d: { Live2DModel }
+} = PIXI;
 
 // Kalidokit
-const { Face, Vector: { lerp }, Utils: { clamp } } = Kalidokit;
+const {
+	Face,
+	Vector: { lerp },
+	Utils: { clamp }
+} = Kalidokit;
 
+// 1, Live2Dモデルへのパスを指定する
 const modelUrl = "./hiyori/hiyori_pro_t10.model3.json";
 const videoElement = document.getElementById("my-video");
+const guideCanvas = document.getElementById("my-guides");
 
 let currentModel, facemesh;
-let latestRiggedFace = null;
-let smoothRiggedFace = null;
 
-// モーション再生管理
-let isPlayingMotion = false;
-let motionBlendFactor = 0;
-let motionTimer = null;
-let originalMotionUpdate = null; // 本来のMotionUpdate処理を保持する変数
-
+// メインの処理開始
 (async function main() {
-	// 1. PixiJSの準備（背景透過）
+
+	// 2, PixiJSを準備する
 	const app = new PIXI.Application({
 		view: document.getElementById("my-live2d"),
 		autoStart: true,
 		backgroundAlpha: 0,
+		backgroundColor: 0xffffff,
 		resizeTo: window
 	});
 
-	// 2. Live2Dモデルのロード
-	currentModel = await Live2DModel.from(modelUrl, { 
-		autoInteract: false
-	});
-
-	// 【絶対停止処理】ライブラリの自動モーション更新関数を退避・無効化する
-	originalMotionUpdate = currentModel.internalModel.motionManager.update;
-	currentModel.internalModel.motionManager.update = () => false; // 普段は何も実行させない
-
+	// 3, Live2Dモデルをロードする
+	currentModel = await Live2DModel.from(modelUrl, { autoInteract: false });
 	currentModel.scale.set(0.4);
 	currentModel.interactive = true;
 	currentModel.anchor.set(0.5, 0.5);
 	currentModel.position.set(window.innerWidth * 0.5, window.innerHeight * 0.8);
 
-	// ドラッグ操作
+	// 4, Live2Dモデルをドラッグ可能にする
 	currentModel.on("pointerdown", e => {
 		currentModel.offsetX = e.data.global.x - currentModel.position.x;
 		currentModel.offsetY = e.data.global.y - currentModel.position.y;
 		currentModel.dragging = true;
 	});
-	currentModel.on("pointerup", () => { currentModel.dragging = false; });
-	currentModel.on("pointerupoutside", () => { currentModel.dragging = false; });
+	currentModel.on("pointerup", e => {
+		currentModel.dragging = false;
+	});
 	currentModel.on("pointermove", e => {
 		if (currentModel.dragging) {
 			currentModel.position.set(
@@ -57,57 +55,22 @@ let originalMotionUpdate = null; // 本来のMotionUpdate処理を保持する�
 		}
 	});
 
-	// マウスホイール拡大縮小
+	// 5, Live2Dモデルを拡大/縮小可能に(マウスホイール)
 	document.querySelector("#my-live2d").addEventListener("wheel", e => {
 		e.preventDefault();
-		const newScale = clamp(currentModel.scale.x + e.deltaY * -0.001, 0.1, 3.0);
-		currentModel.scale.set(newScale);
+		currentModel.scale.set(
+			clamp(currentModel.scale.x + e.deltaY * -0.001, -0.5, 10)
+		);
 	});
 
+	// 6, Live2Dモデルを配置する
 	app.stage.addChild(currentModel);
 
-	// 3. キー押下（数字キー0〜9）
-	window.addEventListener("keydown", e => {
-		if (e.repeat || !currentModel) return;
-
-		if (e.key === "1") playCustomMotion("", 0); // hiyori_m01
-		if (e.key === "2") playCustomMotion("", 1); // hiyori_m02
-		if (e.key === "3") playCustomMotion("", 2); // hiyori_m03
-		if (e.key === "4") playCustomMotion("", 3); // hiyori_m04
-		if (e.key === "5") playCustomMotion("", 4); // hiyori_m05
-		if (e.key === "6") playCustomMotion("", 5); // hiyori_m06
-		if (e.key === "7") playCustomMotion("", 6); // hiyori_m07
-		if (e.key === "8") playCustomMotion("", 7); // hiyori_m08
-		if (e.key === "9") playCustomMotion("", 8); // hiyori_m09
-		if (e.key === "0") playCustomMotion("", 9); // hiyori_m10
-	});
-
-	// 4. 毎フレームの描画・制御ルーティン
-	app.ticker.add((delta) => {
-		if (!currentModel) return;
-
-		if (isPlayingMotion) {
-			// キーを押してモーション再生中のみ、一時的に本来のモーション更新を実行する
-			const coreModel = currentModel.internalModel.coreModel;
-			originalMotionUpdate.call(currentModel.internalModel.motionManager, coreModel, app.ticker.elapsedMS / 1000);
-			return;
-		}
-
-		// モーション終了後、スムーズにトラッキングへ復帰
-		if (motionBlendFactor < 1) {
-			motionBlendFactor = Math.min(1, motionBlendFactor + 0.05 * delta);
-		}
-
-		// カメラトラッキング適用（上書きされない）
-		if (latestRiggedFace) {
-			smoothRiggedFace = smoothFaceData(smoothRiggedFace, latestRiggedFace, 0.25 * delta);
-			applyRig(currentModel, smoothRiggedFace, 0.2 * delta, motionBlendFactor);
-		}
-	});
-
-	// 5. MediaPipe FaceMesh
+	// 7, フェイスメッシュの読み込みと設定をする
 	facemesh = new FaceMesh({
-		locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+		locateFile: file => {
+			return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+		}
 	});
 	facemesh.setOptions({
 		maxNumFaces: 1,
@@ -117,122 +80,123 @@ let originalMotionUpdate = null; // 本来のMotionUpdate処理を保持する�
 	});
 	facemesh.onResults(onResults);
 
-	// 6. カメラ開始
+	// 8, Webカメラを開始する
 	startCamera();
 })();
 
-// 特定のキーで1回だけモーションを再生する関数
-const playCustomMotion = async (group, index = 0) => {
-	if (!currentModel) return;
-
-	if (motionTimer) clearTimeout(motionTimer);
-
-	isPlayingMotion = true;
-	motionBlendFactor = 0;
-
-	// 再生前にモーションをセットアップ
-	const motionValue = await currentModel.motion(group, index, 3);
-
-	if (motionValue) {
-		const duration = motionValue._duration || motionValue.duration || 3000;
-
-		// アニメーション時間が終わったら強制的にトラッキングへ戻す
-		motionTimer = setTimeout(() => {
-			isPlayingMotion = false;
-			currentModel.internalModel.motionManager.stopAllMotions();
-		}, duration);
-	} else {
-		isPlayingMotion = false;
-	}
-};
-
-// カメラトラッキング結果受信
 const onResults = results => {
-	const points = results.multiFaceLandmarks ? results.multiFaceLandmarks[0] : null;
-	if (points) {
-		latestRiggedFace = Face.solve(points, {
-			runtime: "mediapipe",
-			video: videoElement
-		});
-	} else {
-		latestRiggedFace = null;
+	// 9, フェイスメッシュの描画
+	drawResults(results.multiFaceLandmarks ? results.multiFaceLandmarks[0] : null);
+	
+	// 顔が検出されている場合のみモデルへ反映
+	if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
+		animateLive2DModel(results.multiFaceLandmarks[0]);
 	}
 };
 
-// データの平滑化（EMAフィルタ）
-const smoothFaceData = (oldData, newData, factor) => {
-	if (!oldData) return newData;
-	const f = clamp(factor, 0.05, 1);
-	return {
-		pupil: {
-			x: lerp(oldData.pupil.x, newData.pupil.x, f),
-			y: lerp(oldData.pupil.y, newData.pupil.y, f)
-		},
-		head: {
-			degrees: {
-				x: lerp(oldData.head.degrees.x, newData.head.degrees.x, f),
-				y: lerp(oldData.head.degrees.y, newData.head.degrees.y, f),
-				z: lerp(oldData.head.degrees.z, newData.head.degrees.z, f)
-			},
-			y: lerp(oldData.head.y, newData.head.y, f)
-		},
-		eye: {
-			l: lerp(oldData.eye.l, newData.eye.l, f),
-			r: lerp(oldData.eye.r, newData.eye.r, f)
-		},
-		mouth: {
-			x: lerp(oldData.mouth.x, newData.mouth.x, f),
-			y: lerp(oldData.mouth.y, newData.mouth.y, f)
-		}
-	};
+// フェイスメッシュの描画
+const drawResults = points => {
+	if (!guideCanvas || !videoElement || !points) return;
+	guideCanvas.width = videoElement.videoWidth;
+	guideCanvas.height = videoElement.videoHeight;
+	let canvasCtx = guideCanvas.getContext("2d");
+	canvasCtx.save();
+	canvasCtx.clearRect(0, 0, guideCanvas.width, guideCanvas.height);
+	drawConnectors(canvasCtx, points, FACEMESH_TESSELATION, {
+		color: "#C0C0C070",
+		lineWidth: 1
+	});
+	if (points && points.length === 478) {
+		drawLandmarks(canvasCtx, [points[468], points[468 + 5]], {
+			color: "#ffe603",
+			lineWidth: 2
+		});
+	}
+	canvasCtx.restore();
 };
 
-// パラメータ適用処理
-const applyRig = (model, result, lerpAmount, blendFactor = 1) => {
-	const coreModel = model.internalModel.coreModel;
-	model.internalModel.eyeBlink = undefined;
+// Live2Dモデルとランドマークを連動させる
+const animateLive2DModel = points => {
+	if (!currentModel || !points) return;
+	let riggedFace = Face.solve(points, {
+		runtime: "mediapipe",
+		video: videoElement
+	});
+	rigFace(riggedFace, 0.5);
+};
 
-	const setParam = (id, targetVal) => {
-		const currentVal = coreModel.getParameterValueById(id);
-		const finalTarget = lerp(currentVal, targetVal, blendFactor);
-		coreModel.setParameterValueById(id, lerp(currentVal, finalTarget, lerpAmount));
-	};
+// パラメータ書き換え処理（毎フレーム実行）
+const rigFace = (result, lerpAmount = 0.7) => {
+	if (!currentModel || !result) return;
+	
+	const coreModel = currentModel.internalModel.coreModel;
 
-	// 視線
-	setParam("ParamEyeBallX", result.pupil.x);
-	setParam("ParamEyeBallY", result.pupil.y);
+	// 自動瞬き処理との衝突を防ぐ
+	currentModel.internalModel.eyeBlink = undefined;
 
-	// 頭部回転（ミラーリング）
-	setParam("ParamAngleX", -result.head.degrees.y);
-	setParam("ParamAngleY", result.head.degrees.x);
-	setParam("ParamAngleZ", -result.head.degrees.z);
+	// 瞳
+	coreModel.setParameterValueById(
+		"ParamEyeBallX",
+		lerp(result.pupil.x, coreModel.getParameterValueById("ParamEyeBallX"), lerpAmount)
+	);
+	coreModel.setParameterValueById(
+		"ParamEyeBallY",
+		lerp(result.pupil.y, coreModel.getParameterValueById("ParamEyeBallY"), lerpAmount)
+	);
+
+	// 頭の回転
+	coreModel.setParameterValueById(
+		"ParamAngleX",
+		lerp(result.head.degrees.y, coreModel.getParameterValueById("ParamAngleX"), lerpAmount)
+	);
+	coreModel.setParameterValueById(
+		"ParamAngleY",
+		lerp(result.head.degrees.x, coreModel.getParameterValueById("ParamAngleY"), lerpAmount)
+	);
+	coreModel.setParameterValueById(
+		"ParamAngleZ",
+		lerp(result.head.degrees.z, coreModel.getParameterValueById("ParamAngleZ"), lerpAmount)
+	);
 
 	// 体の連動
 	const dampener = 0.3;
-	setParam("ParamBodyAngleX", -result.head.degrees.y * dampener);
-	setParam("ParamBodyAngleY", result.head.degrees.x * dampener);
-	setParam("ParamBodyAngleZ", -result.head.degrees.z * dampener);
+	coreModel.setParameterValueById(
+		"ParamBodyAngleX",
+		lerp(result.head.degrees.y * dampener, coreModel.getParameterValueById("ParamBodyAngleX"), lerpAmount)
+	);
+	coreModel.setParameterValueById(
+		"ParamBodyAngleY",
+		lerp(result.head.degrees.x * dampener, coreModel.getParameterValueById("ParamBodyAngleY"), lerpAmount)
+	);
+	coreModel.setParameterValueById(
+		"ParamBodyAngleZ",
+		lerp(result.head.degrees.z * dampener, coreModel.getParameterValueById("ParamBodyAngleZ"), lerpAmount)
+	);
 
-	// 目と口
-	const currentEyeL = coreModel.getParameterValueById("ParamEyeLOpen");
-	const currentEyeR = coreModel.getParameterValueById("ParamEyeROpen");
-	
-	let stabilizedEyes = Face.stabilizeBlink(
+	// 目の開閉
+	let stabilizedEyes = Kalidokit.Face.stabilizeBlink(
 		{
-			l: lerp(currentEyeL, result.eye.l, lerpAmount),
-			r: lerp(currentEyeR, result.eye.r, lerpAmount)
+			l: lerp(result.eye.l, coreModel.getParameterValueById("ParamEyeLOpen"), 0.7),
+			r: lerp(result.eye.r, coreModel.getParameterValueById("ParamEyeROpen"), 0.7)
 		},
 		result.head.y
 	);
 
-	setParam("ParamEyeLOpen", stabilizedEyes.l);
-	setParam("ParamEyeROpen", stabilizedEyes.r);
+	coreModel.setParameterValueById("ParamEyeLOpen", stabilizedEyes.l);
+	coreModel.setParameterValueById("ParamEyeROpen", stabilizedEyes.r);
 
-	setParam("ParamMouthOpenY", result.mouth.y);
-	setParam("ParamMouthForm", 0.3 + result.mouth.x);
+	// 口の開閉・形状
+	coreModel.setParameterValueById(
+		"ParamMouthOpenY",
+		lerp(result.mouth.y, coreModel.getParameterValueById("ParamMouthOpenY"), 0.3)
+	);
+	coreModel.setParameterValueById(
+		"ParamMouthForm",
+		0.3 + lerp(result.mouth.x, coreModel.getParameterValueById("ParamMouthForm"), 0.3)
+	);
 };
 
-// Webカメラ起動
+// Webカメラの起動
 const startCamera = () => {
 	const camera = new Camera(videoElement, {
 		onFrame: async () => {
